@@ -125,7 +125,7 @@ def published(items: list[str]) -> str:
     return "📤 <b>Опубліковано в каналі</b>\n" + "\n".join(f"• {i}" for i in items)
 
 
-def daily(now: datetime, stats: dict, days: set[date]) -> str:
+def daily(now: datetime, stats: dict, days: set[date], chats: int = 0) -> str:
     today = now.date()
     have = lambda d: "✅" if d in days else "⏳ ще немає"  # noqa: E731
     checks = stats.get("checks", 0)
@@ -134,7 +134,8 @@ def daily(now: datetime, stats: dict, days: set[date]) -> str:
             f"🕒 Остання перевірка: {now:%H:%M}\n\n"
             f"📅 Графік у боті: сьогодні {have(today)} · завтра {have(today + timedelta(days=1))}\n"
             f"📊 З минулого звіту: перевірок {checks} (норма ≈{EXPECTED_CHECKS}), "
-            f"публікацій {stats.get('published', 0)}, збоїв {stats.get('fails', 0)} {ok}\n\n"
+            f"публікацій {stats.get('published', 0)}, збоїв {stats.get('fails', 0)} {ok}\n"
+            + (f"📡 Публікую в чатів: {chats}\n" if chats else "") + "\n"
             f"<i>Щодня близько {STATUS_HOUR}:00 приходить це повідомлення. Якщо його немає, "
             f"бот не запускається: відкрийте вкладку Actions у репозиторії.</i>")
 

@@ -65,6 +65,16 @@ def bump(state: dict, key: str) -> None:
     stats[key] = stats.get(key, 0) + 1
 
 
+def parse_chats(raw: str) -> list[str]:
+    """TELEGRAM_CHAT_ID → список без повторів (@Назва і @назва — це той самий чат)."""
+    seen: dict[str, None] = {}
+    for c in raw.replace(";", ",").split(","):
+        c = c.strip()
+        if c:
+            seen.setdefault(c.lower() if c.startswith("@") else c, None)
+    return list(seen)
+
+
 def env_flag(name: str, default: bool = False) -> bool:
     return os.environ.get(name, str(int(default))).strip().lower() in {"1", "true", "yes"}
 
@@ -73,7 +83,7 @@ async def _run() -> int:
     dry_run = env_flag("DRY_RUN")
     post_first = env_flag("POST_ON_FIRST_RUN", True)
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-    chats = [c.strip() for c in os.environ.get("TELEGRAM_CHAT_ID", "").split(",") if c.strip()]
+    chats = parse_chats(os.environ.get("TELEGRAM_CHAT_ID", ""))
     admin = os.environ.get("ADMIN_CHAT_ID", "").strip()
     notes = env_flag("ADMIN_NOTES", True)  # коротка нотатка адміну після кожної публікації
 
@@ -84,7 +94,7 @@ async def _run() -> int:
         """Раз на добу (з 08:00) — «бот працює нормально» зі статистикою."""
         today_ = now_.date().isoformat()
         if now_.hour >= adm.STATUS_HOUR and state.get("status_day") != today_:
-            await tell(adm.daily(now_, state.get("stats", {}), days))
+            await tell(adm.daily(now_, state.get("stats", {}), days, len(chats)))
             state["status_day"], state["stats"] = today_, {}
     if not dry_run and (not token or not chats):
         print("Не задано TELEGRAM_BOT_TOKEN або TELEGRAM_CHAT_ID (Settings → Secrets → Actions).")

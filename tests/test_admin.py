@@ -110,3 +110,14 @@ def test_classify_and_throttle():
     assert adm.should_notify(state, "k", now)
     assert not adm.should_notify(state, "k", now + timedelta(hours=5))
     assert adm.should_notify(state, "k", now + timedelta(hours=7))
+
+
+def test_parse_chats_removes_duplicates():
+    assert bot_main.parse_chats("@Chan, @chan ,-1001;-1001,,-1002") == ["@chan", "-1001", "-1002"]
+    assert bot_main.parse_chats("") == []
+
+
+def test_daily_mentions_number_of_chats(env, monkeypatch):
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "@a,@A,-1")
+    _, out = env.run(hour=9)
+    assert "Публікую в чатів: 2" in out
