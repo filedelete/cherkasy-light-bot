@@ -207,6 +207,15 @@ async def _run() -> int:
         except Exception as err:
             print(f"Не вдалося оновити сайт: {err!r}")
 
+    # graf.json для Worker (миттєві команди): лише коли графік змінився, раз на добу або файлу ще немає
+    graf_path = SITE_PATH.parent / "graf.json"
+    if env_flag("SITE", True) and (changes or state.get("graf_day") != today or not graf_path.exists()):
+        try:
+            commands.write_graf(graf_path, result, now)
+            state["graf_day"] = today
+        except Exception as err:
+            print(f"Не вдалося записати graf.json: {err!r}")
+
     await daily(now, set(result))
     state["schedules"] = {d.isoformat(): s.to_dict() for d, s in sorted(result.items())}
     state["fails"] = 0

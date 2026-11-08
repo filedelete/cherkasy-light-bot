@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import json
 from datetime import date, datetime
 from pathlib import Path
 
@@ -75,3 +76,11 @@ async def process(state: dict, *, token: str, now: datetime, dry_run: bool = Fal
     except Exception as err:  # noqa: BLE001  (наприклад, 409, якщо в бота ще встановлено вебхук)
         print(f"Не вдалося обробити команди: {err!r}")
     return answered
+
+
+def write_graf(path: Path, schedules: dict[date, DaySchedule], now: datetime) -> None:
+    """graf.json для Cloudflare Worker: готовий текст /graf і час оновлення (лежить поруч із сайтом)."""
+    has = any(d >= now.date() for d in schedules)
+    data = {"updated": f"{now:%d.%m о %H:%M}", "graf": message.pinned(schedules, now) if has else ""}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")

@@ -68,3 +68,10 @@ def test_failure_in_commands_does_not_break_run(env, monkeypatch):
     monkeypatch.setattr(Telegram, "updates", boom)
     code, out = env.run(hour=9)
     assert code == 0 and "Не вдалося обробити команди" in out
+
+
+def test_write_graf_json(env, tmp_path):
+    env.run(hour=9)
+    import json
+    data = json.loads((tmp_path / "docs" / "graf.json").read_text(encoding="utf-8"))
+    assert "АКТУАЛЬНИЙ ГРАФІК" in data["graf"] and data["updated"].startswith("08.11")
