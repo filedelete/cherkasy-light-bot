@@ -15,7 +15,7 @@ from ua_outages.models import DaySchedule
 from ua_outages.timeline import diff_schedules
 
 from . import admin as adm
-from . import message, site, weekly
+from . import commands, message, site, weekly
 from .telegram import Telegram
 
 OPERATOR_ID = "cherkasy-oe"
@@ -103,6 +103,10 @@ async def _run() -> int:
     now = now_kyiv()
     state = load_state()
     first_run = "schedules" not in state
+
+    # команди /ping і /graf в особистих повідомленнях (відповідаємо до перевірки сайту, щоб /ping працював і при збої)
+    if await commands.process(state, token=token, now=now, dry_run=dry_run, out_dir=OUT_DIR, button_url=site_url()):
+        save_state(state)
 
     try:
         new = await fetch_schedules(now)
@@ -206,6 +210,7 @@ async def _run() -> int:
     await daily(now, set(result))
     state["schedules"] = {d.isoformat(): s.to_dict() for d, s in sorted(result.items())}
     state["fails"] = 0
+    state["last_ok"] = now.isoformat()
     state["heartbeat"] = now.date().isoformat()  # раз на добу змінює файл, щоб GitHub не вимкнув розклад
     save_state(state)
     print(f"Готово: змін {len(changes)}, днів у стані {len(result)}.")
