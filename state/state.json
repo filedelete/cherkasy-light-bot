@@ -249,6 +249,7 @@
    ]
   }
  },
+ "last_ok": "2026-11-08T21:42:04.011522+02:00",
  "pinned": {
   "@umantalknow": 2034
  },
@@ -510,7 +511,8 @@
  },
  "site_day": "2026-11-08",
  "stats": {
-  "checks": 6
+  "checks": 8
  },
- "status_day": "2026-11-08"
+ "status_day": "2026-11-08",
+ "update_offset": 750135787
 }
