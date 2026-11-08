@@ -2,11 +2,11 @@ name: check-schedule
 
 on:
   schedule:
-    - cron: "7,17,27,37,47,57 * * * *"   # кожні 10 хв (GitHub може запізнюватись на кілька хвилин)
+    - cron: "*/10 * * * *"   # кожні 10 хв (GitHub може запізнюватись на кілька хвилин)
   workflow_dispatch: {}       # ручний запуск: вкладка Actions → Run workflow
 
 permissions:
-  contents: write             # потрібно, щоб зберегти state/state.json
+  contents: write             # потрібно, щоб зберегти state/state.json і сайт docs/
 
 concurrency:
   group: check-schedule
@@ -39,4 +39,5 @@ jobs:
           git config user.name "schedule-bot"
           git config user.email "schedule-bot@users.noreply.github.com"
           git add state/state.json
+          [ -d docs ] && git add docs || true
           git diff --cached --quiet || (git commit -m "state: оновлено" && git pull --rebase -q && git push)
