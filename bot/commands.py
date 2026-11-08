@@ -60,7 +60,9 @@ async def process(state: dict, *, token: str, now: datetime, dry_run: bool = Fal
         async with aiohttp.ClientSession() as session:
             tg = Telegram(session, token, [], dry_run=dry_run, out_dir=out_dir, button_url=button_url)
             offset = state.get("update_offset", 0)
-            for upd in await tg.updates(offset):
+            updates = await tg.updates(offset)
+            print(f"Команди: нових повідомлень боту {len(updates)}")
+            for upd in updates:
                 msg = upd.get("message") or {}
                 chat = msg.get("chat") or {}
                 cmd = command_of(msg.get("text", "")) if chat.get("type") == "private" else None
