@@ -1,0 +1,2 @@
+ukraine-energy-monitor @ git+https://github.com/fastiuk/ukraine-energy-monitor@v0.5.2
+aiohttp>=3.9
