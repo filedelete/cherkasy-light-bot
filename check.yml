@@ -1,0 +1,43 @@
+name: check-schedule
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # кожні 10 хв (GitHub може запізнюватись на кілька хвилин)
+  workflow_dispatch: {}       # ручний запуск: вкладка Actions → Run workflow
+
+permissions:
+  contents: write             # потрібно, щоб зберегти state/state.json і сайт docs/
+
+concurrency:
+  group: check-schedule
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Перевірити графік і опублікувати зміни
+        run: python -m bot.main
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ADMIN_CHAT_ID: ${{ secrets.ADMIN_CHAT_ID }}
+
+      - name: Зберегти стан
+        if: always()
+        run: |
+          git config user.name "schedule-bot"
+          git config user.email "schedule-bot@users.noreply.github.com"
+          git add state/state.json
+          [ -d docs ] && git add docs || true
+          git diff --cached --quiet || (git commit -m "state: оновлено" && git pull --rebase -q && git push)
