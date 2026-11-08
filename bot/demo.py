@@ -12,7 +12,7 @@ from ua_outages.models import KYIV, DaySchedule
 from ua_outages.providers.cherkasy import parse_post
 from ua_outages.timeline import diff_schedules
 
-from . import message
+from . import message, site
 
 SAMPLE = Path(__file__).resolve().parent.parent / "tests" / "sample_2026-11-08.json"
 
@@ -37,3 +37,6 @@ if __name__ == "__main__":
     print(message.build(diff_schedules({}, old)[0]))
     print("\n=== Графік змінено ===\n")
     print(message.build(diff_schedules(old, new)[0]))
+    now = datetime(2026, 11, 8, 14, 10, tzinfo=KYIV)
+    site.write_site(Path("out/index.html"), {today: new[today], date(2026, 11, 9): sample_schedule(date(2026, 11, 9))}, now)
+    print("\nСайт: out/index.html")

@@ -12,7 +12,7 @@ from ua_outages.models import DaySchedule, group_sort_key
 from ua_outages.timeline import DayChange
 
 MAX_DIFF_ROWS = 8
-DIVIDER = "━━━━━━━━━━━━━━"
+LINE = "┈" * 18  # тонкий розділювач
 
 MONTHS = ["січня", "лютого", "березня", "квітня", "травня", "червня", "липня",
           "серпня", "вересня", "жовтня", "листопада", "грудня"]
@@ -84,41 +84,54 @@ def summary(sched: DaySchedule) -> str:
             f"🥶 Найважче: <b>{names(worst)}</b> ({hours_text(hi)})")
 
 
-def queue_block(sched: DaySchedule, group: str, *, changed: bool = False) -> str:
-    """Дві стрічки: «1.1 · 10 год» і години відключень."""
-    mark = " 🔄" if changed else ""
+def _keycap(key: str) -> str:
+    """«1» → 1️⃣; для нецифрових назв — нейтральний значок."""
+    return key + "\ufe0f\u20e3" if len(key) == 1 and key.isdigit() else "🔹"
+
+
+def _tree(rows: list[str]) -> list[str]:
+    """Додає гілки ┣ … ┗ до списку рядків."""
+    return [("┗ " if i == len(rows) - 1 else "┣ ") + r for i, r in enumerate(rows)]
+
+
+def queue_lines(sched: DaySchedule, group: str, *, last: bool, changed: bool = False) -> list[str]:
+    """Піддерево однієї черги: «┣ 1.1 · 14 год» і під нею години відключень."""
     spans = outage_hours(sched, group)
     sure = [_span(a, b) for a, b, maybe in spans if not maybe]
     maybe = [_span(a, b) for a, b, maybe in spans if maybe]
     total = total_off(sched, group)
-    head = f"<b>{escape(group)}</b>{mark}  ·  " + (hours_text(total) if total else "без відключень")
+    mark = " 🔄" if changed else ""
+    head = (("┗ " if last else "┣ ") + f"<b>{escape(group)}</b>{mark} · "
+            + (hours_text(total) if total else "без відключень"))
+    pipe = "\u2003 " if last else "┃ "  # у останньої черги вертикальної лінії немає
     if not spans:
-        return f"{head}\n🟢 світло є весь день"
+        return [head, pipe + "🟢 світло є весь день"]
     lines = [head]
     if sure:
-        lines.append("🔴 " + " · ".join(sure))
+        lines.append(pipe + "🔴 " + " · ".join(sure))
     if maybe:
-        lines.append("🟡 можливо: " + " · ".join(maybe))
-    return "\n".join(lines)
+        lines.append(pipe + "🟡 можливо: " + " · ".join(maybe))
+    return lines
 
 
 def schedule_text(sched: DaySchedule, changed=()) -> str:
-    """Повний графік: черги парами (1.1 і 1.2 разом), між парами порожній рядок."""
+    """Повний графік: по групах (1.1 і 1.2 під заголовком «1️⃣ Черга 1»), між групами порожній рядок."""
     changed = set(changed)
-    blocks, prev = [], None
+    groups: dict[str, list[str]] = {}
     for g in sorted(sched.groups, key=group_sort_key):
-        block = queue_block(sched, g, changed=g in changed)
-        if prev is not None and g.split(".")[0] == prev.split(".")[0]:
-            blocks[-1] += "\n" + block
-        else:
-            blocks.append(block)
-        prev = g
+        groups.setdefault(g.split(".")[0], []).append(g)
+    blocks = []
+    for key, members in groups.items():
+        lines = [f"{_keycap(key)} <b>Черга {escape(key)}</b>"]
+        for i, g in enumerate(members):
+            lines += queue_lines(sched, g, last=i == len(members) - 1, changed=g in changed)
+        blocks.append("\n".join(lines))
     return "\n\n".join(blocks)
 
 
 def legend(sched: DaySchedule) -> str:
     any_maybe = any(m for g in sched.groups for *_, m in outage_hours(sched, g))
-    text = "🔴 світла немає  ·  в решту годин 🟢 світло є"
+    text = "🔴 світла немає · 🟢 в решту часу світло є"
     return text + ("\n🟡 можливе відключення" if any_maybe else "")
 
 
@@ -134,12 +147,12 @@ def diff_lines(change: DayChange) -> list[str]:
         if added:
             parts.append("➕ " + ", ".join(_span(a, b) for a, b in sorted(added)))
         if parts:
-            lines.append(f"<b>{escape(g)}</b>   " + "    ".join(parts))
+            lines.append(f"<b>{escape(g)}</b>  " + "  ".join(parts))
     return lines
 
 
 def _title(sched: DaySchedule) -> str:
-    return (f"⚡ <b>ГРАФІК ВІДКЛЮЧЕНЬ</b> ⚡\n"
+    return (f"⚡ <b>ГРАФІК ВІДКЛЮЧЕНЬ</b>\n{LINE}\n"
             f"📍 Черкаська область\n"
             f"🗓 <b>{date_label(sched.day)}</b> · {WEEKDAYS[sched.day.weekday()]}")
 
@@ -165,10 +178,10 @@ def build(change: DayChange) -> str:
             shown = rows[:MAX_DIFF_ROWS]
             if len(rows) > MAX_DIFF_ROWS:
                 shown.append(f"…і ще {len(rows) - MAX_DIFF_ROWS}")
-            parts.append("<b>Що змінилось</b>\n" + "\n".join(shown))
+            parts.append("<b>Що змінилось</b>\n" + "\n".join(_tree(shown)))
         parts.append(summary(sched))
 
-    parts.append(DIVIDER + "\n" + legend(sched))
+    parts.append(LINE + "\n" + legend(sched) + "\n" + LINE)
     parts.append(schedule_text(sched, changed=() if change.published else change.groups))
     parts.append(_footer(sched))
     return "\n\n".join(parts)
@@ -178,3 +191,35 @@ def all_clear(sched: DaySchedule) -> str:
     return (f"{_title(sched)}\n\n"
             f"✅ <b>Відключень за графіком немає</b>\n"
             f"Світло має бути весь день у всіх чергах.\n\n{_footer(sched)}")
+
+
+def _day_name(day: date, today: date) -> str:
+    if day == today:
+        return "Сьогодні"
+    if (day - today).days == 1:
+        return "Завтра"
+    return WEEKDAYS[day.weekday()].capitalize()
+
+
+def pinned(schedules: dict[date, DaySchedule], now: datetime) -> str:
+    """Закріплений пост: актуальний графік на сьогодні та завтра."""
+    days = sorted(d for d in schedules if d >= now.date())[:2]
+
+    def build(chosen: list[date]) -> str:
+        parts = [f"📌 <b>АКТУАЛЬНИЙ ГРАФІК</b>\n{LINE}\n📍 Черкаська область\n🕒 оновлено {now:%H:%M}"]
+        for i, d in enumerate(chosen):
+            sched = schedules[d]
+            head = f"🗓 <b>{_day_name(d, now.date())}</b> · {date_label(d)}, {WEEKDAYS[d.weekday()]}"
+            if no_outages(sched):
+                parts.append(f"{head}\n✅ відключень за графіком немає")
+                continue
+            body = [head, summary(sched)]
+            if i == 0:
+                body += [LINE, legend(sched), LINE]
+            parts.append("\n".join(body) + "\n\n" + schedule_text(sched))
+        return "\n\n".join(parts)
+
+    text = build(days)
+    if len(text) > 4096:  # не влізло: лишаємо тільки найближчий день
+        text = build(days[:1])
+    return text
