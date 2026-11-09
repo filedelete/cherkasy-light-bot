@@ -62,6 +62,25 @@ class Telegram:
                 continue
             raise TelegramError(f"{method}: {body.get('description', body)}")
 
+    async def updates(self, offset: int) -> list[dict]:
+        """Нові повідомлення боту (команди). У dry-run мережі немає."""
+        if self.dry_run:
+            return []
+        result = await self._call("getUpdates", {"offset": offset, "timeout": 0, "limit": 100,
+                                                 "allowed_updates": json.dumps(["message"])})
+        return list(result or [])
+
+    async def reply(self, chat_id: int | str, text: str, *, with_button: bool = False) -> None:
+        """Відповідь в один конкретний чат (а не в усі канали зі списку)."""
+        parts = split_text(text)
+        for i, part in enumerate(parts):
+            if self.dry_run:
+                self._dump(f"[відповідь у {chat_id}]\n{part}")
+                continue
+            extra = self._markup() if with_button and i == len(parts) - 1 else {}
+            await self._call("sendMessage", {"chat_id": chat_id, "text": part, "parse_mode": "HTML",
+                                              "disable_web_page_preview": "true", **extra})
+
     async def message(self, text: str) -> dict[str, int]:
         """Надсилає текст у всі чати. Повертає {chat_id: id останнього надісланого повідомлення}.
 

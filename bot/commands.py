@@ -44,11 +44,43 @@ def ping_text(state: dict, now: datetime) -> str:
     return f"🏓 <b>Понг!</b> Бот працює.{extra}"
 
 
+def _day_name(day: date, today: date) -> str:
+    if day == today:
+        return "Сьогодні"
+    if (day - today).days == 1:
+        return "Завтра"
+    return message.WEEKDAYS[day.weekday()].capitalize()
+
+
+def current_text(schedules: dict[date, DaySchedule], now: datetime) -> str:
+    """Актуальний графік на сьогодні й завтра (збирається з тих самих блоків, що й публікації)."""
+    days = sorted(d for d in schedules if d >= now.date())[:2]
+
+    def build(chosen: list[date]) -> str:
+        parts = [f"📌 <b>АКТУАЛЬНИЙ ГРАФІК</b>\n{message.LINE}\n📍 Черкаська область\n🕒 оновлено {now:%H:%M}"]
+        for i, d in enumerate(chosen):
+            sched = schedules[d]
+            head = f"🗓 <b>{_day_name(d, now.date())}</b> · {message.date_label(d)}, {message.WEEKDAYS[d.weekday()]}"
+            if message.no_outages(sched):
+                parts.append(f"{head}\n✅ відключень за графіком немає")
+                continue
+            body = [head, message.summary(sched)]
+            if i == 0:
+                body += [message.LINE, message.legend(sched), message.LINE]
+            parts.append("\n".join(body) + "\n\n" + message.schedule_text(sched))
+        return "\n\n".join(parts)
+
+    text = build(days)
+    if len(text) > 4096:  # не влізло: лишаємо тільки найближчий день
+        text = build(days[:1])
+    return text
+
+
 def graf_text(state: dict, now: datetime) -> str:
     schedules = {date.fromisoformat(k): DaySchedule.from_dict(v) for k, v in state.get("schedules", {}).items()}
     if not any(d >= now.date() for d in schedules):
         return "⏳ Графіка в боті ще немає. Як тільки оператор його опублікує, він з'явиться тут."
-    return message.pinned(schedules, now)
+    return current_text(schedules, now)
 
 
 async def process(state: dict, *, token: str, now: datetime, dry_run: bool = False,
@@ -81,6 +113,6 @@ async def process(state: dict, *, token: str, now: datetime, dry_run: bool = Fal
 def write_graf(path: Path, schedules: dict[date, DaySchedule], now: datetime) -> None:
     """graf.json для Cloudflare Worker: готовий текст /graf і час оновлення (лежить поруч із сайтом)."""
     has = any(d >= now.date() for d in schedules)
-    data = {"updated": f"{now:%d.%m о %H:%M}", "graf": message.pinned(schedules, now) if has else ""}
+    data = {"updated": f"{now:%d.%m о %H:%M}", "graf": current_text(schedules, now) if has else ""}
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
