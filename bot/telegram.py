@@ -41,6 +41,7 @@ class Telegram:
         self.dry_run, self.out_dir, self._n = dry_run, out_dir, 0
         self.button_url = button_url
         self.pin_errors: list[str] = []
+        self.send_errors: list[str] = []  # чати, куди не вдалося надіслати (решта чатів отримала)
 
     def _markup(self) -> dict:
         """Кнопка «Відкрити сайт» під повідомленням (порожньо, якщо адреси сайту немає)."""
@@ -62,20 +63,36 @@ class Telegram:
             raise TelegramError(f"{method}: {body.get('description', body)}")
 
     async def message(self, text: str) -> dict[str, int]:
-        """Надсилає текст у всі чати. Повертає {chat_id: id останнього надісланого повідомлення}."""
+        """Надсилає текст у всі чати. Повертає {chat_id: id останнього надісланого повідомлення}.
+
+        Чати незалежні: якщо в одному збій (бота видалили з групи), решта все одно отримує повідомлення.
+        Виняток лише коли не вдалося жодному чату, тоді публікацію буде повторено наступного разу.
+        """
         parts = split_text(text)
         ids: dict[str, int] = {}
+        failed: dict[str, Exception] = {}
         for i, part in enumerate(parts):
             if self.dry_run:
                 self._dump(part + (f"\n[кнопка: {self.button_url}]" if self.button_url and i == len(parts) - 1 else ""))
                 continue
             extra = self._markup() if i == len(parts) - 1 else {}
             for chat in self.chat_ids:
-                sent = await self._call("sendMessage", {"chat_id": chat, "text": part, "parse_mode": "HTML",
-                                                         "disable_web_page_preview": "true", **extra})
+                if chat in failed:
+                    continue
+                try:
+                    sent = await self._call("sendMessage", {"chat_id": chat, "text": part, "parse_mode": "HTML",
+                                                             "disable_web_page_preview": "true", **extra})
+                except Exception as err:  # noqa: BLE001
+                    failed[chat] = err
+                    continue
                 ids[chat] = sent.get("message_id", 0)
         if self.dry_run:
             return {chat: 0 for chat in (self.chat_ids or ["dry-run"])}
+        if failed and not ids:
+            raise next(iter(failed.values()))
+        for chat, err in failed.items():
+            self.send_errors.append(f"{chat}: {err}")
+            print(f"Не вдалося надіслати в {chat}: {err!r}; інші чати отримали повідомлення")
         return ids
 
     async def pin_latest(self, ids: dict[str, int], previous: dict[str, int]) -> dict[str, int]:

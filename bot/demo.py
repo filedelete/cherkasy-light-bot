@@ -29,6 +29,19 @@ def sample_schedule(day: date = date(2026, 11, 8), tweaks: dict[str, list[tuple[
     return parse_post({"data": {"content": html}}, day, datetime(day.year, day.month, day.day, 0, 51, tzinfo=KYIV))
 
 
+def fake_history(today: date, days: int = 10) -> dict:
+    """Вигадана історія для попереднього перегляду сайту: черги по колу міняються графіками."""
+    from datetime import timedelta
+    data = json.loads(SAMPLE.read_text(encoding="utf-8"))
+    names = list(data)
+    out = {}
+    for k in range(1, days + 1):
+        day = today - timedelta(days=k)
+        out[day.isoformat()] = {g: [list(x) for x in data[names[(i + k) % len(names)]][: 3 - (k % 2)]]
+                                for i, g in enumerate(names)}
+    return out
+
+
 if __name__ == "__main__":
     today = date(2026, 11, 8)
     old = {today: sample_schedule(today)}
@@ -38,5 +51,6 @@ if __name__ == "__main__":
     print("\n=== Графік змінено ===\n")
     print(message.build(diff_schedules(old, new)[0]))
     now = datetime(2026, 11, 8, 14, 10, tzinfo=KYIV)
-    site.write_site(Path("out/index.html"), {today: new[today], date(2026, 11, 9): sample_schedule(date(2026, 11, 9))}, now)
+    site.write_site(Path("out/index.html"), {today: new[today], date(2026, 11, 9): sample_schedule(date(2026, 11, 9))}, now,
+                    fake_history(today))
     print("\nСайт: out/index.html")

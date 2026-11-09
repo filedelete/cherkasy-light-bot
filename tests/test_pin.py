@@ -70,3 +70,43 @@ def test_legacy_separate_pinned_post_is_deleted(env):
     _, out = env.run(hour=7)
     assert "видалено застарілий закріплений пост 55" in out
     assert "pinned" not in bot_main.load_state()
+
+
+class TwoChats(Telegram):
+    """Дві групи; у «поганій» бота видалили."""
+    def __init__(self, bad):
+        super().__init__(None, "t", ["@good", "@bad"])
+        self.bad, self.sent = bad, []
+
+    async def _call(self, method, data, retries=3):
+        if data.get("chat_id") == self.bad and method == "sendMessage":
+            raise TelegramError("sendMessage: Forbidden: bot was kicked from the group chat")
+        self.sent.append((method, data["chat_id"]))
+        return {"message_id": 9}
+
+
+def test_one_broken_group_does_not_block_the_others():
+    tg = TwoChats("@bad")
+    ids = asyncio.run(tg.message("графік"))
+    assert ids == {"@good": 9} and tg.sent == [("sendMessage", "@good")]
+    assert len(tg.send_errors) == 1 and "@bad" in tg.send_errors[0]
+
+
+def test_first_group_broken_still_reaches_second():
+    tg = TwoChats("@good")          # тепер «поганий» перший у списку
+    assert asyncio.run(tg.message("графік")) == {"@bad": 9}
+    assert tg.sent == [("sendMessage", "@bad")] and "@good" in tg.send_errors[0]
+
+
+def test_all_groups_broken_raises_so_it_is_retried():
+    tg = TwoChats("@good")
+    tg.bad = None
+
+    async def boom(method, data, retries=3):
+        raise TelegramError("sendMessage: Forbidden")
+    tg._call = boom
+    try:
+        asyncio.run(tg.message("графік"))
+        raise AssertionError("мало бути виключення")
+    except TelegramError:
+        pass

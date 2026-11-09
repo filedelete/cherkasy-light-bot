@@ -72,6 +72,39 @@ footer a{color:inherit}
 .btns{display:flex;flex-wrap:wrap;gap:8px}
 .btn{display:inline-block;border:0;background:var(--accent);color:var(--accent-ink);font:inherit;font-weight:700;padding:10px 14px;border-radius:12px;cursor:pointer;text-decoration:none}
 .btn.alt{background:var(--panel2);color:var(--text)}
+/* дашборд */
+.big{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}
+.big b{font-size:40px;line-height:1;font-variant-numeric:tabular-nums}
+.big span{color:var(--muted)}
+.tiles{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+@media (max-width:480px){.tiles{grid-template-columns:repeat(4,1fr)}}
+.tile{border:1px solid var(--line);background:var(--panel2);color:var(--text);font:inherit;border-radius:12px;padding:8px 2px;cursor:pointer;text-align:center;min-width:0}
+.tile b{display:block;font-size:16px}
+.tile small{display:block;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tile.off{background:color-mix(in srgb,var(--off) 24%,var(--panel));border-color:var(--off)}
+.tile.on{background:color-mix(in srgb,var(--on) 16%,var(--panel));border-color:color-mix(in srgb,var(--on) 55%,var(--line))}
+.card h3{margin:0 0 4px;font-size:17px}
+.card .note{margin:0 0 12px;color:var(--muted);font-size:14px}
+.ev{display:grid;grid-template-columns:54px 1fr;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}
+.ev:first-of-type{border-top:0}
+.ev .t{font-weight:800}
+.ev .q{font-weight:700}
+.ev .k{color:var(--muted);font-size:13px;display:block}
+.chartwrap{display:grid;grid-template-columns:26px 1fr;gap:6px}
+.yax{display:flex;flex-direction:column;justify-content:space-between;align-items:flex-end;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums;height:130px;line-height:1}
+.cols{display:flex;gap:2px;align-items:stretch;height:130px;border-bottom:1px solid var(--line);background:linear-gradient(var(--line),var(--line)) 0 50%/100% 1px no-repeat}
+.hc{flex:1;min-width:0;border:0;padding:0;background:none;display:flex;align-items:flex-end;cursor:pointer;border-radius:4px 4px 0 0}
+.hc i{display:block;width:100%;background:var(--off);border-radius:4px 4px 0 0;min-height:0}
+.hc.fut i{opacity:.55}
+.hc.cur{background:var(--panel2)}
+@media (hover:hover){.hc:hover{background:var(--panel2)}}
+.readout{margin-top:12px;min-height:22px;font-weight:600;font-size:14px}
+.ticks.ml{margin-left:32px}
+.rank{display:grid;grid-template-columns:38px 1fr 76px;gap:10px;align-items:center;padding:5px 0;cursor:pointer}
+.rank .name{font-weight:800}
+.rank .track{height:14px;border-radius:7px;background:var(--panel2);overflow:hidden}
+.rank .track i{display:block;height:100%;background:var(--off);border-radius:7px}
+.rank .v{text-align:right;color:var(--muted);font-size:14px;font-variant-numeric:tabular-nums}
 .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:600;opacity:0;transition:opacity .2s;pointer-events:none}
 .toast.show{opacity:1}
 </style>
@@ -82,6 +115,7 @@ footer a{color:inherit}
     <div class="logo"><svg viewBox="0 0 64 64"><path d="M36 8 18 36h12l-4 20 20-30H33z" fill="#1c1608"/></svg></div>
     <div><h1>Світло · Черкаська область</h1><div class="sub" id="sub"></div></div>
   </header>
+  <div class="seg" id="tabs" role="group" aria-label="Розділ"></div>
   <div class="seg" id="days" role="group" aria-label="День"></div>
   <div class="picker" id="chips" role="group" aria-label="Черга"></div>
   <div id="main"></div>
@@ -111,6 +145,8 @@ function kyivNow(){
 const queues = [...new Set(D.days.flatMap(d => Object.keys(d.groups)))];
 let qSel = store.get("q", "all"); if (qSel !== "all" && !queues.includes(qSel)) qSel = "all";
 { const u = new URLSearchParams(location.search).get("q"); if (u && queues.includes(u)) qSel = u; }  // ?q=3.1 — пряме посилання на чергу
+let tab = store.get("tab", "sched"); if (tab !== "dash") tab = "sched";
+{ const u = new URLSearchParams(location.search).get("tab"); if (u === "dash" || u === "sched") tab = u; }  // ?tab=dash
 let dSel = 0;
 { const n = kyivNow(), i = D.days.findIndex(d => d.date === n.date); dSel = i >= 0 ? i : 0; }
 
@@ -155,8 +191,12 @@ function render(){
   $("days").style.display = D.days.length > 1 ? "" : "none";  // один день: перемикач не потрібен
   $("sub").textContent = day.full + (D.days.length > 1 ? "" : " · графіка на завтра ще немає");
   $("upd").textContent = "оновлено " + D.updated;
+  $("tabs").innerHTML = [["sched", "📋 Графік"], ["dash", "📊 Дашборд"]].map(([k, t]) =>
+    `<button aria-pressed="${tab === k}" data-tab="${k}">${t}</button>`).join("");
+  $("chips").style.display = tab === "dash" ? "none" : "";
 
   if (!day || !queues.length){ el.innerHTML = '<div class="card empty">Графіка поки немає</div>'; return; }
+  if (tab === "dash"){ el.innerHTML = dashboard(now, day); return; }
   const legend = `<div class="legend"><span><i style="background:var(--on)"></i>Світло є</span><span><i style="background:var(--off)"></i>Світла немає</span>${
     Object.values(day.groups).some(g => g.some(x => x[2])) ? '<span><i style="background:var(--maybe)"></i>Можливо</span>' : ""}</div>`;
 
@@ -180,6 +220,102 @@ function render(){
       <div class="times">${list.length ? list.map(([a, b, m]) => `<div class="time ${m ? "maybe" : ""}">${fmt(a)}–${fmt(b)}<small>${m ? "можливо" : dur(b - a)}</small></div>`).join("") : '<div class="empty" style="padding:6px 0">Світло є весь день ✨</div>'}</div>
       ${legend}</div>` + calendarCard(qSel);
   }
+}
+
+// ---------- дашборд ----------
+const HIST = D.history || {};
+const WD = ["Нд", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
+const byName = (a, b) => a.localeCompare(b, "uk", {numeric: true});
+const sumSpans = spans => spans.reduce((s, x) => s + x[1] - x[0], 0);
+
+function series(){  // останні дні: історія, а для сьогодні/завтра — свіжіші дані зі сторінки
+  const m = {};
+  for (const [d, g] of Object.entries(HIST)) m[d] = g;
+  for (const d of D.days) m[d.date] = Object.fromEntries(queues.map(q => [q, sure(d, q).map(x => [x[0], x[1]])]));
+  return Object.keys(m).sort().slice(-14).map(date => ({date, groups: m[date]}));
+}
+function avgOff(groups){ const hs = queues.map(q => sumSpans(groups[q] || [])); return hs.reduce((a, b) => a + b, 0) / (hs.length || 1); }
+
+function upcoming(now){
+  const days = D.days.filter(d => d.date >= now.date).slice(0, 2);
+  if (!days.length || days[0].date !== now.date) return [];
+  const ev = new Map();
+  for (const q of queues){
+    const iv = [];
+    days.forEach((d, i) => sure(d, q).forEach(([a, b]) => iv.push([a + 24 * i, b + 24 * i])));
+    iv.sort((x, y) => x[0] - y[0]);
+    const m = [];
+    for (const x of iv){ const l = m[m.length - 1]; if (l && x[0] <= l[1] + 1e-6) l[1] = Math.max(l[1], x[1]); else m.push([x[0], x[1]]); }
+    for (const [a, b] of m){
+      if (a > now.h) add(a, true, q);
+      if (b > now.h && b < 24 * days.length - 1e-6) add(b, false, q);
+    }
+  }
+  function add(t, off, q){ const k = Math.round(t * 60) + (off ? "o" : "n"); if (!ev.has(k)) ev.set(k, {t, off, qs: []}); ev.get(k).qs.push(q); }
+  return [...ev.values()].sort((x, y) => x.t - y.t || (y.off - x.off)).slice(0, 6);
+}
+
+function dashboard(now, day){
+  const N = queues.length, isToday = day.date === now.date;
+  let offNow = 0;
+  const tiles = queues.map(q => {
+    if (isToday){
+      const st = status(q, now); if (st && st.off) offNow++;
+      const sub = !st ? "" : st.until == null ? "весь день" : (st.off ? "до " : "з ") + clock(st.until % 24);
+      return `<button class="tile ${st ? (st.off ? "off" : "on") : ""}" data-tile="${q}" title="Черга ${q}: ${st ? (st.off ? "світла немає" : "світло є") : ""}"><b>${q}</b><small>${sub}</small></button>`;
+    }
+    const h = total(day, q);
+    return `<button class="tile" data-tile="${q}"><b>${q}</b><small>${h ? hoursText(h) : "без відкл."}</small></button>`;
+  }).join("");
+  const avg = avgOff(Object.fromEntries(queues.map(q => [q, sure(day, q)])));
+  const hero = isToday
+    ? `<div class="big"><b>${offNow}</b><span>із ${N} черг без світла зараз</span></div>`
+    : `<div class="big"><b>${hoursText(avg).replace(" год", "")}</b><span>год без світла в середньому на чергу · ${day.name.toLowerCase()}</span></div>`;
+  const legend = isToday ? `<div class="legend"><span><i style="background:var(--off)"></i>світла немає</span><span><i style="background:var(--on)"></i>світло є</span><span>натисни чергу — докладніше</span></div>` : `<div class="legend"><span>натисни чергу — докладніше</span></div>`;
+  let html = `<div class="card">${hero}<div class="tiles">${tiles}</div>${legend}</div>`;
+
+  const up = upcoming(now);
+  if (isToday && up.length){
+    html += `<div class="card"><h3>⏭ Найближчі зміни</h3><p class="note">Що станеться далі по всіх чергах</p>${up.map(e =>
+      `<div class="ev"><div class="t">${clock(e.t % 24)}</div><div><span class="q">${e.off ? "🔴 вимикають" : "🟢 вмикають"}: ${e.qs.sort(byName).join(", ")}</span><span class="k">${e.t >= 24 ? "завтра" : "за " + dur(e.t - now.h)}</span></div></div>`).join("")}</div>`;
+  }
+
+  // скільки черг без світла в кожну годину
+  const hourly = Array.from({length: 24}, (_, h) => queues.reduce((s, q) => s + sure(day, q).reduce((t, [a, b]) => t + Math.max(0, Math.min(b, h + 1) - Math.max(a, h)), 0), 0));
+  const mx = Math.max(...hourly), mn = Math.min(...hourly);
+  const hr = h => pad(h) + ":00–" + pad(h + 1) + ":00";
+  const tip = h => hr(h) + " · без світла " + (Math.round(hourly[h] * 10) / 10).toString().replace(".", ",") + " із " + N + " черг";
+  const peak = hourly.indexOf(mx), calm = hourly.indexOf(mn);
+  const curH = isToday ? Math.floor(now.h) : -1;
+  html += `<div class="card"><h3>🕐 Навантаження за годинами</h3><p class="note">Скільки черг одночасно без світла · ${day.full}</p>
+    <div class="chartwrap"><div class="yax"><span>${N}</span><span>${Math.round(N / 2)}</span><span>0</span></div>
+    <div class="cols" id="hcols">${hourly.map((v, h) => `<button class="hc ${h === curH ? "cur" : ""} ${isToday && h > curH ? "fut" : ""}" data-h="${h}" data-tip="${tip(h)}" title="${tip(h)}" aria-label="${tip(h)}"><i style="height:${v / N * 100}%"></i></button>`).join("")}</div></div>
+    ${ticks(3).replace('class="ticks"', 'class="ticks ml"')}
+    <div class="readout" id="readout">${mx ? `Найбільше без світла: <b>${hr(peak)}</b> (${Math.round(mx * 10) / 10} із ${N}) · найспокійніше: <b>${hr(calm)}</b> (${Math.round(mn * 10) / 10})` : "У цей день відключень за графіком немає 🎉"}</div>
+    <div class="legend"><span><i style="background:var(--off)"></i>черг без світла</span>${isToday ? '<span><i style="background:var(--panel2);border:1px solid var(--line)"></i>зараз</span><span>світліші стовпці — ще попереду</span>' : ""}<span>торкнись стовпця — подробиці</span></div></div>`;
+
+  // історія по днях + рейтинг
+  const sr = series();
+  if (sr.length >= 2){
+    const vals = sr.map(x => avgOff(x.groups)), top = Math.max(6, Math.ceil(Math.max(...vals) / 2) * 2);
+    const hi = vals.indexOf(Math.max(...vals));
+    html += `<div class="card"><h3>📈 Скільки світла забирають відключення</h3><p class="note">Середня тривалість відключень на чергу за добу, годин</p>
+      <div class="chartwrap"><div class="yax" style="height:110px"><span>${top}</span><span>${top / 2}</span><span>0</span></div>
+      <div class="cols" style="height:110px">${sr.map((x, i) => {
+        const dt = new Date(x.date + "T12:00:00"), fut = x.date > now.date, tp = WD[dt.getDay()] + " " + dt.getDate() + "." + pad(dt.getMonth() + 1) + " · " + hoursText(vals[i]) + " на чергу";
+        return `<button class="hc ${x.date === now.date ? "cur" : ""} ${fut ? "fut" : ""}" data-tip="${tp}" title="${tp}" aria-label="${tp}"><i style="height:${vals[i] / top * 100}%"></i></button>`;}).join("")}</div></div>
+      <div class="cols" style="height:auto;border:0;background:none;margin:4px 0 0 32px">${sr.map(x => { const dt = new Date(x.date + "T12:00:00"); return `<span style="flex:1;text-align:center;font-size:11px;color:var(--muted)">${sr.length <= 10 ? WD[dt.getDay()] : dt.getDate()}</span>`; }).join("")}</div>
+      <div class="readout" id="readout2">Найважчий день: <b>${new Date(sr[hi].date + "T12:00:00").getDate()}.${pad(new Date(sr[hi].date + "T12:00:00").getMonth() + 1)}</b> — ${hoursText(vals[hi])} на чергу</div></div>`;
+
+    const per = queues.map(q => ({q, h: sr.reduce((s, x) => s + sumSpans(x.groups[q] || []), 0) / sr.length})).sort((a, b) => a.h - b.h || byName(a.q, b.q));
+    const m = Math.max(...per.map(x => x.h)) || 1;
+    html += `<div class="card"><h3>🏆 Рейтинг черг</h3><p class="note">Від найсвітлішої до найтемнішої · у середньому за добу, ${sr.length} дн.</p>${per.map((x, i) =>
+      `<div class="rank" data-tile="${x.q}"><div class="name">${x.q}</div><div class="track"><i style="width:${x.h / m * 100}%"></i></div><div class="v">${i === 0 ? "😎 " : i === per.length - 1 && per.length > 1 ? "🥶 " : ""}${hoursText(x.h)}</div></div>`).join("")}</div>`;
+  } else {
+    html += `<div class="card empty">📈 Історія та рейтинг черг з'являться, коли бот назбирає хоча б 2 дні даних</div>`;
+  }
+  if (sr.length < 7) html += `<p class="hint" style="text-align:center">Історія накопичується щодня, зараз у ній ${sr.length} дн.</p>`;
+  return html;
 }
 
 function calUrl(q){ return new URL("cal/" + q.replace(".", "-") + ".ics", location.href); }
@@ -213,6 +349,10 @@ document.addEventListener("click", e => {
     }
     return;
   }
+  const hc = e.target.closest(".hc");
+  if (hc){ const ro = hc.closest(".card").querySelector(".readout"); if (ro) ro.textContent = hc.dataset.tip; return; }
+  const tl = e.target.closest("[data-tile]"); if (tl){ qSel = tl.dataset.tile; tab = "sched"; store.set("q", qSel); store.set("tab", tab); render(); window.scrollTo(0, 0); return; }
+  const tb = e.target.closest("[data-tab]"); if (tb){ tab = tb.dataset.tab; store.set("tab", tab); render(); return; }
   const d = e.target.closest("[data-d]"); if (d){ dSel = +d.dataset.d; render(); return; }
   const q = e.target.closest("[data-q]"); if (q){ qSel = q.dataset.q; store.set("q", qSel); render(); }
 });

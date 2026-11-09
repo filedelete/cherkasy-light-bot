@@ -25,10 +25,28 @@ def _name(day: date, today: date) -> str:
     return WEEKDAYS[day.weekday()].capitalize()
 
 
-def site_data(schedules: dict[date, DaySchedule], now: datetime) -> dict:
+HISTORY_DAYS = 14
+
+
+def _history(history: dict | None, today: date) -> dict:
+    """Минулі дні для дашборда: {дата: {черга: [[з, до], ...]}}, лише певні відключення."""
+    out: dict = {}
+    for key in sorted(history or {}):
+        try:
+            if date.fromisoformat(key) >= today:
+                continue
+            out[key] = {g: [[round(float(a), 2), round(float(b), 2)] for a, b in spans]
+                        for g, spans in history[key].items()}
+        except (ValueError, TypeError):
+            continue  # зіпсований запис в історії не повинен ламати сайт
+    return dict(list(out.items())[-HISTORY_DAYS:])
+
+
+def site_data(schedules: dict[date, DaySchedule], now: datetime, history: dict | None = None) -> dict:
     days = sorted(d for d in schedules if d >= now.date())[:2]
     return {
         "updated": f"{now:%d.%m %H:%M}",
+        "history": _history(history, now.date()),
         "days": [{
             "date": d.isoformat(),
             "name": _name(d, now.date()),
@@ -40,13 +58,13 @@ def site_data(schedules: dict[date, DaySchedule], now: datetime) -> dict:
     }
 
 
-def render_site(schedules: dict[date, DaySchedule], now: datetime) -> str:
-    payload = json.dumps(site_data(schedules, now), ensure_ascii=False, separators=(",", ":"))
+def render_site(schedules: dict[date, DaySchedule], now: datetime, history: dict | None = None) -> str:
+    payload = json.dumps(site_data(schedules, now, history), ensure_ascii=False, separators=(",", ":"))
     payload = payload.replace("</", "<\\/")  # щоб дані ніколи не закрили тег <script>
     return TEMPLATE.read_text(encoding="utf-8").replace("__DATA__", payload)
 
 
-def write_site(path: Path, schedules: dict[date, DaySchedule], now: datetime) -> None:
+def write_site(path: Path, schedules: dict[date, DaySchedule], now: datetime, history: dict | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(render_site(schedules, now), encoding="utf-8")
+    path.write_text(render_site(schedules, now, history), encoding="utf-8")
     ics.write_calendars(path.parent / "cal", schedules, now)

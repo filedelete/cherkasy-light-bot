@@ -167,6 +167,9 @@ async def _run() -> int:
                 else:
                     result.pop(sched.day, None)
 
+        if tg.send_errors and adm.should_notify(state, "chat", now):
+            await tell(adm.publish_failed(TelegramError("; ".join(tg.send_errors)), "надіслати повідомлення в частину чатів"))
+
         # закріплюємо останнє надіслане повідомлення про графік, попереднє відкріплюємо (вимкнути: PIN_MESSAGE=0)
         if last_ids and env_flag("PIN_MESSAGE", True):
             state["pin"] = await tg.pin_latest(last_ids, state.get("pin", {}))
@@ -198,7 +201,7 @@ async def _run() -> int:
     today = now.date().isoformat()
     if env_flag("SITE", True) and (changes or state.get("site_day") != today or not SITE_PATH.exists()):
         try:
-            site.write_site(SITE_PATH, result, now)
+            site.write_site(SITE_PATH, result, now, state.get("history"))
             state["site_day"] = today
         except Exception as err:
             print(f"Не вдалося оновити сайт: {err!r}")

@@ -35,3 +35,23 @@ def test_site_data_cannot_close_script_tag(monkeypatch):
     monkeypatch.setattr(site, "_name", lambda d, t: "</script><b>x")
     html = site.render_site(schedules(), NOW)
     assert html.count("</script>") == 1  # лише власний закриваючий тег сторінки
+
+
+def test_history_only_past_days_and_skips_garbage():
+    hist = {"2026-11-06": {"1.1": [[0, 2], [5, 7]]}, "2026-11-07": {"1.1": [[1.0, 3.0]]},
+            "2026-11-08": {"1.1": [[0, 1]]},  # сьогодні: беремо з розкладу, не з історії
+            "bad": {"1.1": []}, "2026-11-05": {"1.1": "oops"}}
+    data = site.site_data(schedules(), NOW, hist)
+    assert list(data["history"]) == ["2026-11-06", "2026-11-07"]
+    assert data["history"]["2026-11-06"]["1.1"] == [[0.0, 2.0], [5.0, 7.0]]
+
+
+def test_history_is_capped_and_optional():
+    hist = {f"2026-10-{d:02d}": {"1.1": [[0, 1]]} for d in range(1, 31)}
+    assert len(site.site_data(schedules(), NOW, hist)["history"]) == site.HISTORY_DAYS
+    assert site.site_data(schedules(), NOW)["history"] == {}
+
+
+def test_dashboard_present_in_page():
+    html = site.render_site(schedules(), NOW, {"2026-11-07": {"1.1": [[0, 2]]}})
+    assert '"dash"' in html and "function dashboard(" in html
