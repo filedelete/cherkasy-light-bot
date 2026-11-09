@@ -492,6 +492,8 @@
   }
  },
  "site_day": "2026-11-09",
- "stats": {},
+ "stats": {
+  "checks": 1
+ },
  "status_day": "2026-11-09"
 }
