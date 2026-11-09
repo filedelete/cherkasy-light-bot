@@ -1,4 +1,4 @@
-"""Мінімальний клієнт Telegram Bot API (sendMessage, editMessageText, pinChatMessage)."""
+"""Мінімальний клієнт Telegram Bot API (sendMessage, pinChatMessage, unpinChatMessage, deleteMessage)."""
 from __future__ import annotations
 
 import asyncio
@@ -40,6 +40,7 @@ class Telegram:
         self.session, self.token, self.chat_ids = session, token, chat_ids
         self.dry_run, self.out_dir, self._n = dry_run, out_dir, 0
         self.button_url = button_url
+        self.pin_errors: list[str] = []
 
     def _markup(self) -> dict:
         """Кнопка «Відкрити сайт» під повідомленням (порожньо, якщо адреси сайту немає)."""
@@ -60,69 +61,60 @@ class Telegram:
                 continue
             raise TelegramError(f"{method}: {body.get('description', body)}")
 
-    async def message(self, text: str) -> None:
+    async def message(self, text: str) -> dict[str, int]:
+        """Надсилає текст у всі чати. Повертає {chat_id: id останнього надісланого повідомлення}."""
         parts = split_text(text)
+        ids: dict[str, int] = {}
         for i, part in enumerate(parts):
             if self.dry_run:
                 self._dump(part + (f"\n[кнопка: {self.button_url}]" if self.button_url and i == len(parts) - 1 else ""))
                 continue
             extra = self._markup() if i == len(parts) - 1 else {}
             for chat in self.chat_ids:
-                await self._call("sendMessage", {"chat_id": chat, "text": part, "parse_mode": "HTML",
-                                                  "disable_web_page_preview": "true", **extra})
-
-    async def updates(self, offset: int) -> list[dict]:
-        """Нові повідомлення боту (команди). У dry-run мережі немає."""
+                sent = await self._call("sendMessage", {"chat_id": chat, "text": part, "parse_mode": "HTML",
+                                                         "disable_web_page_preview": "true", **extra})
+                ids[chat] = sent.get("message_id", 0)
         if self.dry_run:
-            return []
-        result = await self._call("getUpdates", {"offset": offset, "timeout": 0, "limit": 100,
-                                                 "allowed_updates": json.dumps(["message"])})
-        return list(result or [])
+            return {chat: 0 for chat in (self.chat_ids or ["dry-run"])}
+        return ids
 
-    async def reply(self, chat_id: int | str, text: str, *, with_button: bool = False) -> None:
-        """Відповідь в один конкретний чат (а не в усі канали зі списку)."""
-        parts = split_text(text)
-        for i, part in enumerate(parts):
-            if self.dry_run:
-                self._dump(f"[відповідь у {chat_id}]\n{part}")
-                continue
-            extra = self._markup() if with_button and i == len(parts) - 1 else {}
-            await self._call("sendMessage", {"chat_id": chat_id, "text": part, "parse_mode": "HTML",
-                                              "disable_web_page_preview": "true", **extra})
+    async def pin_latest(self, ids: dict[str, int], previous: dict[str, int]) -> dict[str, int]:
+        """Закріплює щойно надіслане повідомлення, а попереднє закріплене ботом відкріплює.
 
-    async def pinned(self, text: str, ids: dict[str, int]) -> dict[str, int]:
-        """Закріплений пост «Актуальний графік»: редагує наявний, інакше надсилає новий і закріплює.
-
-        ids: {chat_id: message_id} з минулих запусків; повертає оновлений словник.
+        ids: {chat: id нового}; previous: {chat: id закріпленого раніше}. Повертає актуальний {chat: id}.
+        Помилки не переривають роботу, а потрапляють у self.pin_errors.
         """
+        self.pin_errors = []
         if self.dry_run:
-            self._dump("[закріплене повідомлення]\n" + text + (f"\n[кнопка: {self.button_url}]" if self.button_url else ""))
-            return ids
-        result = dict(ids)
-        for chat in self.chat_ids:
-            mid = ids.get(chat)
-            if mid:
-                try:
-                    await self._call("editMessageText", {"chat_id": chat, "message_id": mid, "text": text,
-                                                         "parse_mode": "HTML", "disable_web_page_preview": "true",
-                                                         **self._markup()})
-                    continue
-                except TelegramError as err:
-                    msg = str(err).lower()
-                    if "not modified" in msg:
-                        continue
-                    if not any(k in msg for k in ("not found", "can't be edited", "message_id_invalid")):
-                        raise  # тимчасова помилка: спробуємо ще раз, а не плодимо нові пости
-            sent = await self._call("sendMessage", {"chat_id": chat, "text": text, "parse_mode": "HTML",
-                                                    "disable_web_page_preview": "true",
-                                                    "disable_notification": "true", **self._markup()})
-            result[chat] = sent["message_id"]
+            self._dump("[закріплено це повідомлення]")
+            return dict(ids)
+        result = dict(previous)
+        for chat, mid in ids.items():
             try:
-                await self._call("pinChatMessage", {"chat_id": chat, "message_id": sent["message_id"],
-                                                    "disable_notification": "true"})
+                await self._call("pinChatMessage", {"chat_id": chat, "message_id": mid, "disable_notification": "true"})
             except TelegramError as err:
+                self.pin_errors.append(f"{chat}: {err}")
                 print(f"Не вдалося закріпити у {chat}: {err}. Дайте боту право «Закріплювати повідомлення».")
+                continue
+            old = previous.get(chat)
+            if old and old != mid:
+                try:
+                    await self._call("unpinChatMessage", {"chat_id": chat, "message_id": old})
+                except TelegramError:
+                    pass  # старе могли відкріпити чи видалити вручну
+            result[chat] = mid
         return result
+
+    async def remove_pinned(self, ids: dict[str, int]) -> None:
+        """Видаляє застарілий окремий пост «Актуальний графік» (з ранніх версій бота)."""
+        for chat, mid in ids.items():
+            if self.dry_run:
+                self._dump(f"[видалено застарілий закріплений пост {mid} у {chat}]")
+                continue
+            try:
+                await self._call("deleteMessage", {"chat_id": chat, "message_id": mid})
+            except TelegramError as err:
+                print(f"Не вдалося видалити застарілий пост у {chat}: {err}. Видаліть його вручну.")
 
     def _dump(self, text: str) -> None:
         self._n += 1

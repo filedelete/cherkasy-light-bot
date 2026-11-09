@@ -15,8 +15,8 @@ from ua_outages.models import DaySchedule
 from ua_outages.timeline import diff_schedules
 
 from . import admin as adm
-from . import commands, message, site, weekly
-from .telegram import Telegram
+from . import message, site, weekly
+from .telegram import Telegram, TelegramError
 
 OPERATOR_ID = "cherkasy-oe"
 STATE_PATH = Path(os.environ.get("STATE_PATH", "state/state.json"))
@@ -104,10 +104,6 @@ async def _run() -> int:
     state = load_state()
     first_run = "schedules" not in state
 
-    # команди /ping і /graf в особистих повідомленнях (відповідаємо до перевірки сайту, щоб /ping працював і при збої)
-    if await commands.process(state, token=token, now=now, dry_run=dry_run, out_dir=OUT_DIR, button_url=site_url()):
-        save_state(state)
-
     try:
         new = await fetch_schedules(now)
     except Exception as err:  # мережа, захист сайту, зміна формату
@@ -148,15 +144,17 @@ async def _run() -> int:
     async with aiohttp.ClientSession() as session:
         tg = Telegram(session, token, chats, dry_run=dry_run, out_dir=OUT_DIR, button_url=site_url())
         done: list[str] = []
+        last_ids: dict[str, int] = {}
         for change in changes:
             sched = change.schedule
             if first_run and not post_first:
                 continue
             try:
                 if message.no_outages(sched):
-                    await tg.message(message.all_clear(sched))
+                    ids = await tg.message(message.all_clear(sched))
                 else:
-                    await tg.message(message.build(change))
+                    ids = await tg.message(message.build(change))
+                last_ids = ids or last_ids
                 bump(state, "published")
                 names = ", ".join(sorted(change.groups))
                 done.append(f"{message.date_label(sched.day)}: " + ("новий графік" if change.published else f"оновлено черги {names}"))
@@ -169,16 +167,14 @@ async def _run() -> int:
                 else:
                     result.pop(sched.day, None)
 
-        # закріплений пост: оновлюємо при змінах, на початку нової доби й коли його ще немає
-        today = now.date().isoformat()
-        if changes or state.get("pinned_day") != today or not state.get("pinned"):
-            try:
-                state["pinned"] = await tg.pinned(message.pinned(result, now), state.get("pinned", {}))
-                state["pinned_day"] = today
-            except Exception as err:
-                print(f"Не вдалося оновити закріплений пост: {err!r}; спробую ще раз за наступної перевірки")
-                if adm.should_notify(state, "pinned", now):
-                    await tell(adm.publish_failed(err, "оновити закріплений пост"))
+        # закріплюємо останнє надіслане повідомлення про графік, попереднє відкріплюємо (вимкнути: PIN_MESSAGE=0)
+        if last_ids and env_flag("PIN_MESSAGE", True):
+            state["pin"] = await tg.pin_latest(last_ids, state.get("pin", {}))
+            if tg.pin_errors and adm.should_notify(state, "pin", now):
+                await tell(adm.publish_failed(TelegramError("; ".join(tg.pin_errors)), "закріпити повідомлення"))
+        if state.get("pinned"):  # окремий пост «Актуальний графік» із ранніх версій: більше не потрібен
+            await tg.remove_pinned(state.pop("pinned"))
+            state.pop("pinned_day", None)
 
         # підсумок тижня: у неділю ввечері, раз на тиждень, якщо накопичилось достатньо даних
         week = weekly.week_of(now.date())[0].isoformat()
@@ -207,19 +203,9 @@ async def _run() -> int:
         except Exception as err:
             print(f"Не вдалося оновити сайт: {err!r}")
 
-    # graf.json для Worker (миттєві команди): лише коли графік змінився, раз на добу або файлу ще немає
-    graf_path = SITE_PATH.parent / "graf.json"
-    if env_flag("SITE", True) and (changes or state.get("graf_day") != today or not graf_path.exists()):
-        try:
-            commands.write_graf(graf_path, result, now)
-            state["graf_day"] = today
-        except Exception as err:
-            print(f"Не вдалося записати graf.json: {err!r}")
-
     await daily(now, set(result))
     state["schedules"] = {d.isoformat(): s.to_dict() for d, s in sorted(result.items())}
     state["fails"] = 0
-    state["last_ok"] = now.isoformat()
     state["heartbeat"] = now.date().isoformat()  # раз на добу змінює файл, щоб GitHub не вимкнув розклад
     save_state(state)
     print(f"Готово: змін {len(changes)}, днів у стані {len(result)}.")

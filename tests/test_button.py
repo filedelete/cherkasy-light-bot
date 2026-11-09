@@ -30,18 +30,13 @@ def test_site_url_from_repository(monkeypatch):
     assert bot_main.site_url() == ""
 
 
-def test_button_only_on_last_part_and_on_pinned():
+def test_button_only_on_last_part():
     tg = Fake()
     asyncio.run(tg.message("\n\n".join(["x" * 3000, "y" * 3000])))
     assert len(tg.sent) == 2
     assert "reply_markup" not in tg.sent[0][1] and "reply_markup" in tg.sent[1][1]
     markup = json.loads(tg.sent[1][1]["reply_markup"])
     assert markup["inline_keyboard"][0][0]["url"] == "https://u.github.io/r/"
-
-    pin = Fake(); asyncio.run(pin.pinned("x", {}))                    # новий пост
-    assert all("reply_markup" in d for m, d in pin.sent if m == "sendMessage")
-    edit = Fake(); asyncio.run(edit.pinned("x", {"@c": 5}))           # редагування
-    assert "reply_markup" in edit.sent[0][1]
 
 
 def test_no_button_without_url():

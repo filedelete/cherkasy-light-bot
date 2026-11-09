@@ -191,35 +191,3 @@ def all_clear(sched: DaySchedule) -> str:
     return (f"{_title(sched)}\n\n"
             f"✅ <b>Відключень за графіком немає</b>\n"
             f"Світло має бути весь день у всіх чергах.\n\n{_footer(sched)}")
-
-
-def _day_name(day: date, today: date) -> str:
-    if day == today:
-        return "Сьогодні"
-    if (day - today).days == 1:
-        return "Завтра"
-    return WEEKDAYS[day.weekday()].capitalize()
-
-
-def pinned(schedules: dict[date, DaySchedule], now: datetime) -> str:
-    """Закріплений пост: актуальний графік на сьогодні та завтра."""
-    days = sorted(d for d in schedules if d >= now.date())[:2]
-
-    def build(chosen: list[date]) -> str:
-        parts = [f"📌 <b>АКТУАЛЬНИЙ ГРАФІК</b>\n{LINE}\n📍 Черкаська область\n🕒 оновлено {now:%H:%M}"]
-        for i, d in enumerate(chosen):
-            sched = schedules[d]
-            head = f"🗓 <b>{_day_name(d, now.date())}</b> · {date_label(d)}, {WEEKDAYS[d.weekday()]}"
-            if no_outages(sched):
-                parts.append(f"{head}\n✅ відключень за графіком немає")
-                continue
-            body = [head, summary(sched)]
-            if i == 0:
-                body += [LINE, legend(sched), LINE]
-            parts.append("\n".join(body) + "\n\n" + schedule_text(sched))
-        return "\n\n".join(parts)
-
-    text = build(days)
-    if len(text) > 4096:  # не влізло: лишаємо тільки найближчий день
-        text = build(days[:1])
-    return text

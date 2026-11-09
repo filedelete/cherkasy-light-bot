@@ -1,6 +1,8 @@
 """Наскрізний тест без мережі: підміняємо джерело й Telegram (DRY_RUN)."""
 import asyncio
-from datetime import date
+from datetime import date, datetime
+
+from ua_outages.models import KYIV
 
 from bot import main as bot_main
 from bot.demo import sample_schedule
@@ -16,6 +18,7 @@ def run(monkeypatch, tmp_path, schedules):
         return schedules
 
     monkeypatch.setattr(bot_main, "fetch_schedules", fake)
+    monkeypatch.setattr(bot_main, "now_kyiv", lambda: datetime(2026, 11, 8, 12, 0, tzinfo=KYIV))  # день демо-графіка
     assert asyncio.run(bot_main.run()) == 0
 
 
