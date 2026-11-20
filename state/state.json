@@ -1,5 +1,5 @@
 {
- "fails": 0,
+ "fails": 1,
  "graf_day": "2026-11-20",
  "heartbeat": "2026-11-20",
  "history": {
@@ -2433,7 +2433,8 @@
  },
  "site_day": "2026-11-20",
  "stats": {
-  "checks": 9
+  "checks": 10,
+  "fails": 1
  },
  "status_day": "2026-11-20",
  "weekly": "2026-11-09"
